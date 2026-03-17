@@ -1,0 +1,47 @@
+name: Build Windows executable
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:   # also triggerable manually from the Actions tab
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install runtime dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install PyInstaller
+        run: pip install -r requirements-dev.txt
+
+      - name: Build executable
+        run: pyinstaller keli_prompt.spec
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: KelihPrompt-windows
+          path: dist/KelihPrompt/
+          retention-days: 30
+
+      - name: Create release archive
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          Compress-Archive -Path dist\KelihPrompt\* -DestinationPath KelihPrompt-${{ github.ref_name }}-windows.zip
+
+      - name: Attach archive to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: KelihPrompt-*.zip
