@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from PySide6.QtCore import Qt, QThread, QTimer
-from PySide6.QtGui import QTextCursor
+from PySide6.QtGui import QAccessible, QAccessibleValueChangeEvent, QTextCursor
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -35,7 +35,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
-    QScrollArea,
     QSpinBox,
     QStatusBar,
     QVBoxLayout,
@@ -66,7 +65,8 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Keli Prompt — TTS Generator")
-        self.resize(860, 900)
+        self.resize(900, 980)
+        self.setMinimumSize(760, 600)
 
         self._settings: dict = load_settings()
         self._thread: Optional[QThread] = None
@@ -102,13 +102,13 @@ class MainWindow(QMainWindow):
         self._status_bar.setAccessibleName("Status bar showing latest progress message")
         self.setStatusBar(self._status_bar)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setAccessibleName("Main content area, scroll to see all controls")
-        self.setCentralWidget(scroll)
-
+        # Use a plain QWidget — no QScrollArea wrapper.
+        # QScrollArea at the top level causes NVDA to enter browse/virtual-cursor
+        # mode and intercept keystrokes rather than passing them to the app.
+        # A resizable QMainWindow with a direct layout keeps NVDA in
+        # application/forms mode throughout.
         container = QWidget()
-        scroll.setWidget(container)
+        self.setCentralWidget(container)
 
         root = QVBoxLayout(container)
         root.setSpacing(14)
@@ -130,7 +130,7 @@ class MainWindow(QMainWindow):
     # ---- Section 1: Mode -----------------------------------------------
 
     def _build_mode_section(self) -> QGroupBox:
-        box = QGroupBox("Section 1: Mode")
+        box = QGroupBox("Mode")
         layout = QVBoxLayout(box)
 
         lbl = QLabel("Narration &mode:")
@@ -152,7 +152,7 @@ class MainWindow(QMainWindow):
     # ---- Section 2: API and output -------------------------------------
 
     def _build_api_output_section(self) -> QGroupBox:
-        box = QGroupBox("Section 2: API and Output")
+        box = QGroupBox("API and Output")
         layout = QVBoxLayout(box)
 
         # API key
@@ -220,7 +220,7 @@ class MainWindow(QMainWindow):
     # ---- Section 3: Input ----------------------------------------------
 
     def _build_input_section(self) -> QGroupBox:
-        box = QGroupBox("Section 3: Input")
+        box = QGroupBox("Input")
         layout = QVBoxLayout(box)
 
         btn_row = QHBoxLayout()
@@ -267,7 +267,7 @@ class MainWindow(QMainWindow):
     # ---- Section 4: Speaker configuration -----------------------------
 
     def _build_speaker_section(self) -> QGroupBox:
-        box = QGroupBox("Section 4: Speaker Configuration")
+        box = QGroupBox("Speaker Configuration")
         layout = QVBoxLayout(box)
 
         # --- Single speaker controls ---
@@ -388,7 +388,7 @@ class MainWindow(QMainWindow):
     # ---- Section 5: Chunking ------------------------------------------
 
     def _build_chunking_section(self) -> QGroupBox:
-        box = QGroupBox("Section 5: Chunking")
+        box = QGroupBox("Chunking")
         layout = QVBoxLayout(box)
 
         cm_lbl = QLabel("Chunking &mode:")
@@ -447,7 +447,7 @@ class MainWindow(QMainWindow):
     # ---- Section 6: Actions -------------------------------------------
 
     def _build_actions_section(self) -> QGroupBox:
-        box = QGroupBox("Section 6: Actions")
+        box = QGroupBox("Actions")
         layout = QVBoxLayout(box)
 
         row = QHBoxLayout()
@@ -490,7 +490,7 @@ class MainWindow(QMainWindow):
     # ---- Section 7: Status log ----------------------------------------
 
     def _build_log_section(self) -> QGroupBox:
-        box = QGroupBox("Section 7: Status Log")
+        box = QGroupBox("Status Log")
         layout = QVBoxLayout(box)
 
         log_lbl = QLabel("Status messages (read only):")
@@ -499,6 +499,7 @@ class MainWindow(QMainWindow):
 
         self.log_edit = QPlainTextEdit()
         self.log_edit.setReadOnly(True)
+        self.log_edit.setTabChangesFocus(True)   # Tab moves to next control, not trapped here
         self.log_edit.setMinimumHeight(160)
         self.log_edit.setAccessibleName(
             "Status log, read only. "
@@ -675,8 +676,16 @@ class MainWindow(QMainWindow):
         cursor = self.log_edit.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
         self.log_edit.setTextCursor(cursor)
-        # Status bar gives screen readers a live update region
+        # Status bar text update
         self._status_bar.showMessage(message)
+        # Fire a UIA value-change event on the status bar so NVDA announces
+        # the new message as a live region without the user navigating to it.
+        if QAccessible.isActive():
+            try:
+                event = QAccessibleValueChangeEvent(self._status_bar, message)
+                QAccessible.updateAccessibility(event)
+            except Exception:
+                pass
 
     # ------------------------------------------------------------------
     # Busy state — disables action buttons; keeps them *visible*
