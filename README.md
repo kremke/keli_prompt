@@ -67,3 +67,4 @@ Output: `dist\KelihPrompt\KelihPrompt.exe`
 | `workers.py` | QThread worker with progress signals |
 | `keli_prompt.spec` | PyInstaller build spec |
 | `build.bat` | Windows build helper script |
+test
